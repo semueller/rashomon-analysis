@@ -11,3 +11,6 @@ mwe_out*/
 
 # PyCharm
 .idea/
+
+# local Claude notes
+CLAUDE.local.md
