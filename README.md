@@ -4,6 +4,7 @@ Analyses of Rashomon sets produced by [rashomon-zoo](../rashomon-zoo): it reads 
 
 - `rashomon_analysis.rashomon`: explanation diversity, method disagreement, Kendall tau.
 - `rashomon_analysis.cfire_eval`: CFIRE rule models per model and explainer (precision, coverage, F1, size) and explainer selection.
+- `rashomon_analysis.stability`: stability of explanations across explainer seeds and budgets, per model: numeric noise over seeds (relative to the explanation's size), pairwise measures (top-k set and rank agreement for any k, flip rate of CFIRE's binarisation, Euclidean and cosine distance), completeness gap, optionally against a reference explanation; `separation`: explainer noise against the differences between models of the run (distance ratio); `classifier_separation`: held-out accuracy of a classifier telling two models' explanations apart, against an explainer-noise baseline. No convergence threshold built in.
 
 
 `rashomon_analysis.py`: explanation diversity (same explainer, pairs of models), method disagreement (same model,

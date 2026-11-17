@@ -24,7 +24,7 @@ import pandas as pd
 from cfire import CFIRESelect, DNFClassifier, accuracy, coverage, covered_accuracy
 from rashomon_zoo.store import Run, environment, read_json, write_json
 
-from .rashomon import output_dir
+from .rashomon import output_dir, select_models
 
 
 def _n_literals(dnf) -> int:
@@ -45,21 +45,22 @@ def evaluate(dnf: DNFClassifier, X: np.ndarray, Y: np.ndarray, n_classes: int) -
 
 
 def run_cfire(run: Run, explainers: Sequence[str], *, results_dir: Path | str, name: str = "default", fit_split: str, eval_split: str,
-              models: str = "rashomon", fitness: str = "covered_accuracy",
+              models: str | Sequence[int] = "rashomon", fitness: str = "covered_accuracy",
               cfire_kwargs: dict | None = None) -> Path:
     cfire_kwargs = {"random_state": 0, **(cfire_kwargs or {})}
     out = output_dir(results_dir, run, "cfire", name)
     task = run.load_task()
-    models_table = run.models()
-    if models == "rashomon":
-        models_table = models_table[models_table["in_rashomon_set"]]
-    ids = models_table["model_id"].tolist()
+    ids = select_models(run, models)["model_id"].tolist()
     # fit samples: the stored explanations on the fit split (identical for all explainers)
     explainer_manifests = {e: run.explainer_manifest(e) for e in explainers}
     idx = explainer_manifests[explainers[0]]["sample_indices"]
     if any(em["sample_indices"] != idx for em in explainer_manifests.values()) or \
             any(em["split"] != fit_split for em in explainer_manifests.values()):
         raise ValueError("explainers must be stored for the same samples of the fit split")
+    for e, em in explainer_manifests.items():
+        missing = set(ids) - set(em["model_ids"])
+        if missing:
+            raise ValueError(f"{e}: models {sorted(missing)} not explained (pass models=[...])")
     X_fit, X_eval = task.X[fit_split][idx], task.X[eval_split]
     P_fit, P_eval = np.asarray(run.outputs(fit_split)), np.asarray(run.outputs(eval_split))
     rows = []
@@ -89,7 +90,8 @@ def run_cfire(run: Run, explainers: Sequence[str], *, results_dir: Path | str, n
         "fit_split": fit_split, "fit_sample_indices": idx, "eval_split": eval_split,
         "labels": "black-box predictions (argmax of stored probabilities)", "fitness": fitness,
         "f1": "2PR/(P+R), P = covered_accuracy, R = accuracy (CFIRE paper)",
-        "cfire_kwargs": cfire_kwargs, "cfire_version": metadata.version("cfire"), "models": models,
+        "cfire_kwargs": cfire_kwargs, "cfire_version": metadata.version("cfire"),
+        "models": models if isinstance(models, str) else [int(i) for i in models],
         "rashomon_criterion": sel_info["criterion"] if sel_info else None, "environment": environment()})
     return out
 

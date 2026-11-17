@@ -56,6 +56,22 @@ def distance(a: np.ndarray, b: np.ndarray, measure: str, k: int | None = None) -
     raise KeyError(measure)
 
 
+def select_models(run: Run, models) -> pd.DataFrame:
+    """rows of models.parquet: models = "rashomon" (Rashomon set, requires select), "all" or a list of model ids"""
+    table = run.models()
+    if isinstance(models, str):
+        if models == "rashomon":
+            return table[table["in_rashomon_set"]]
+        if models == "all":
+            return table
+        raise ValueError(f"models: 'rashomon', 'all' or a list of ids, got {models!r}")
+    ids = [int(i) for i in models]
+    missing = set(ids) - set(table["model_id"])
+    if missing:
+        raise ValueError(f"unknown model ids {sorted(missing)}")
+    return table.set_index("model_id").loc[ids].reset_index()
+
+
 def _pair_value(a, b, measure, k):
     return float(distance(a, b, measure, k).mean())
 
@@ -70,9 +86,7 @@ def _subset(pred_a, pred_b, y, mode):
 
 # ---------------------------------------------------------------------------------------------------------------
 def _load(run: Run, explainers, split, models):
-    models_table = run.models()
-    if models == "rashomon":
-        models_table = models_table[models_table["in_rashomon_set"]]
+    models_table = select_models(run, models)
     ids = models_table["model_id"].tolist()
     t = run.load_task()
     y = t.y[split]
@@ -80,6 +94,9 @@ def _load(run: Run, explainers, split, models):
     E, idx = {}, None
     for e in explainers:
         explainer_manifest = run.explainer_manifest(e)
+        missing = set(ids) - set(explainer_manifest["model_ids"])
+        if missing:
+            raise ValueError(f"{e}: models {sorted(missing)} not explained (pass models=[...])")
         rows = [explainer_manifest["model_ids"].index(i) for i in ids]
         E[e] = np.asarray(run.explanations(e, split))[rows]
         if idx is None:
@@ -91,7 +108,7 @@ def _load(run: Run, explainers, split, models):
 
 
 def diversity(run: Run, explainer: str, measure: str, k: int | None = None, *, split: str,
-              subset: str = "both_correct", models: str = "rashomon") -> pd.DataFrame:
+              subset: str = "both_correct", models: str | Sequence[int] = "rashomon") -> pd.DataFrame:
     """same explainer, all pairs of models: mean distance over the comparison subset"""
     models_table, E, pred, y, _ = _load(run, [explainer], split, models)
     e, ids, rows = E[explainer], models_table.index.tolist(), []
@@ -103,7 +120,7 @@ def diversity(run: Run, explainer: str, measure: str, k: int | None = None, *, s
 
 
 def disagreement(run: Run, explainers: Sequence[str], measure: str, k: int | None = None, *, split: str,
-                 subset: str = "both_correct", models: str = "rashomon") -> pd.DataFrame:
+                 subset: str = "both_correct", models: str | Sequence[int] = "rashomon") -> pd.DataFrame:
     """same model, all pairs of explainers: mean distance over the comparison subset (both_correct: the model is
     correct; same_prediction: all samples); plus the rank of each pair per model (1 = most similar)"""
     models_table, E, pred, y, _ = _load(run, explainers, split, models)
@@ -135,7 +152,7 @@ def output_dir(results_dir: Path | str, run: Run, analysis: str, name: str) -> P
 
 
 def run_all(run: Run, explainers: Sequence[str], k: int, *, results_dir: Path | str, name: str = "default", split: str,
-            subset: str = "both_correct", models: str = "rashomon", measures: Sequence[str] = MEASURES) -> Path:
+            subset: str = "both_correct", models: str | Sequence[int] = "rashomon", measures: Sequence[str] = MEASURES) -> Path:
     """diversity + disagreement + Kendall tau for all measures; writes parquet tables and a manifest"""
     out = output_dir(results_dir, run, "rashomon", name)
     out.mkdir(parents=True, exist_ok=True)
@@ -150,7 +167,7 @@ def run_all(run: Run, explainers: Sequence[str], k: int, *, results_dir: Path | 
         "analysis": "rashomon (diversity, disagreement, Kendall tau)", "zoo_run": str(run.dir),
         "zoo_run_environment": run.manifest().get("environment"), "explainers": list(explainers),
         "explainer_settings": {e: {kk: vv for kk, vv in run.explainer_manifest(e).items() if kk not in ("model_ids", "sample_indices", "seconds_per_model")} for e in explainers}, "k": k, "split": split,
-        "comparison_subset": subset, "models": models, "measures": list(measures), "normalisation": None,
+        "comparison_subset": subset, "models": models if isinstance(models, str) else [int(i) for i in models], "measures": list(measures), "normalisation": None,
         "kendall": "rank vectors of method pairs, all model pairs",
         "rashomon_criterion": sel["criterion"] if sel else None,
         "rashomon_selection": sel["selected_model_ids"] if sel else None, "environment": environment()})
