@@ -28,7 +28,10 @@ from .rashomon import output_dir, select_models
 
 
 def _n_literals(dnf) -> int:
-    return int(sum(len(rule) for cls in dnf.rules for rule in cls))
+    """literals over all rules, as counted by the rule model: with categorical input columns, the literals on the
+    indicators of one column count once per rule (DNFClassifier.n_literals)"""
+    n = getattr(dnf, "n_literals", None)
+    return int(n) if n is not None else int(sum(len(rule) for cls in dnf.rules for rule in cls))
 
 
 def _f1(precision, recall) -> float:

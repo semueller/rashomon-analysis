@@ -48,3 +48,15 @@ def test_f1_is_the_cfire_paper_definition():
     p, c = 5 / 6, 0.6
     assert np.isclose(m["covered_accuracy"], p) and np.isclose(m["coverage"], c)
     assert np.isclose(m["accuracy"], p * c) and np.isclose(m["f1"], p * 2 * c / (1 + c))
+
+
+def test_n_literals_counts_categorical_columns_once():
+    """literals on the indicators of one categorical input column count once per rule"""
+    import numpy as np
+    from cfire import DNFClassifier, Encoding
+    from rashomon_analysis.cfire_eval import _n_literals
+    enc = Encoding.fit(np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]), ["numeric", "categorical"])
+    # encoded columns: 0 numeric, 1-3 indicators of column 1
+    rule = [(0, (-1.0, 1.0)), (1, (0.0, 0.0)), (3, (0.0, 0.0))]
+    assert _n_literals(DNFClassifier([[rule], [[(0, (1.0, 3.0))]]], encoding=enc)) == 3   # 2 + 1, not 3 + 1
+    assert _n_literals(DNFClassifier([[rule], [[(0, (1.0, 3.0))]]])) == 4                  # no encoding: as before
